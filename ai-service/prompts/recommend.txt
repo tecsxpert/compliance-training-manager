@@ -1,0 +1,6 @@
+You are a compliance advisor.
+
+Input:
+{input}
+
+Give 3 recommendations.

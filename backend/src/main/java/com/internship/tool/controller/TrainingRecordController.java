@@ -28,7 +28,7 @@ public class TrainingRecordController {
 
     // ✅ GET ALL WITH PAGINATION (SAFE)
     @GetMapping
-    public Page<TrainingRecord> getAll(
+    public Map<String, Object> getAll(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "5") int size,
             @RequestParam(defaultValue = "id") String sortBy,
@@ -44,7 +44,16 @@ public class TrainingRecordController {
 
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        return repository.findAll(pageable);
+        Page<TrainingRecord> result = repository.findAll(pageable);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", result.getContent());
+        response.put("totalElements", result.getTotalElements());
+        response.put("totalPages", result.getTotalPages());
+        response.put("currentPage", result.getNumber());
+        response.put("pageSize", result.getSize());
+
+        return response;
     }
 
     // ✅ UPDATE (SAFE)
@@ -72,13 +81,13 @@ public class TrainingRecordController {
 
         String oldData = record.toString();
 
-        record.setTitle(updated.getTitle());
-        record.setDescription(updated.getDescription());
-        record.setStatus(updated.getStatus());
-        record.setPriority(updated.getPriority());
-        record.setAssignedTo(updated.getAssignedTo());
-        record.setDueDate(updated.getDueDate());
-        record.setScore(updated.getScore());
+        if (updated.getTitle() != null) record.setTitle(updated.getTitle());
+        if (updated.getDescription() != null) record.setDescription(updated.getDescription());
+        if (updated.getStatus() != null) record.setStatus(updated.getStatus());
+        if (updated.getPriority() != null) record.setPriority(updated.getPriority());
+        if (updated.getAssignedTo() != null) record.setAssignedTo(updated.getAssignedTo());
+        if (updated.getDueDate() != null) record.setDueDate(updated.getDueDate());
+        if (updated.getScore() != null) record.setScore(updated.getScore());
 
         TrainingRecord saved = repository.save(record);
 

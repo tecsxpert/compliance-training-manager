@@ -5,12 +5,18 @@ import com.internship.tool.repository.TrainingRecordRepository;
 import com.internship.tool.repository.AuditLogRepository;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.TestPropertySource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
+// ✅ Using @DataJpaTest instead of @SpringBootTest to avoid loading Redis/Mail/etc.
+// This only loads JPA/H2 context — perfect for CRUD integration tests.
+@DataJpaTest
+@TestPropertySource(properties = {
+    "spring.jpa.hibernate.ddl-auto=create-drop"
+})
 public class TrainingRecordIntegrationTest {
 
     @Autowired

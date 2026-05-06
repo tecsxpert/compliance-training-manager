@@ -1,0 +1,6 @@
+You are a compliance expert.
+
+Input:
+{input}
+
+Generate a clear professional description.
