@@ -1,0 +1,11 @@
+POST http://localhost:8080/api/training
+Content-Type: application/json
+
+{
+  "title": "Java Basics",
+  "description": "Intro training",
+  "assignedTo": "Darshan",
+  "status": "PENDING",
+  "priority": "HIGH",
+  "score": 0
+}

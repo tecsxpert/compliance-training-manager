@@ -1,183 +1,144 @@
 package com.internship.tool.controller;
 
-import com.internship.tool.entity.TrainingRecord;
 import com.internship.tool.entity.AuditLog;
-import com.internship.tool.repository.TrainingRecordRepository;
-import com.internship.tool.repository.AuditLogRepository;
-
+import com.internship.tool.entity.TrainingRecord;
+import com.internship.tool.service.TrainingRecordService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.*;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
-import java.time.LocalDateTime;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/training")
+@Tag(name = "Training Records", description = "Manage compliance training records")
+@SecurityRequirement(name = "bearerAuth")
 public class TrainingRecordController {
 
-    private final TrainingRecordRepository repository;
-    private final AuditLogRepository auditRepository;
+    private final TrainingRecordService service;
 
-    public TrainingRecordController(TrainingRecordRepository repository,
-                                    AuditLogRepository auditRepository) {
-        this.repository = repository;
-        this.auditRepository = auditRepository;
+    public TrainingRecordController(TrainingRecordService service) {
+        this.service = service;
     }
 
-    // ✅ GET ALL WITH PAGINATION (SAFE)
+    // ✅ GET ALL WITH PAGINATION
+    @Operation(summary = "Get all training records with pagination")
     @GetMapping
-    public Page<TrainingRecord> getAll(
+    public ResponseEntity<Page<TrainingRecord>> getAll(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "5") int size,
             @RequestParam(defaultValue = "id") String sortBy,
             @RequestParam(defaultValue = "asc") String sortDir) {
-
-        // 🔥 HOTFIX: pagination safety
-        if (page < 0) page = 0;
-        if (size <= 0) size = 5;
-
-        Sort sort = sortDir.equalsIgnoreCase("asc")
-                ? Sort.by(sortBy).ascending()
-                : Sort.by(sortBy).descending();
-
-        Pageable pageable = PageRequest.of(page, size, sort);
-
-        return repository.findAll(pageable);
+        return ResponseEntity.ok(service.getAll(page, size, sortBy, sortDir));
     }
 
-    // ✅ UPDATE (SAFE)
+    // ✅ CREATE
+    @Operation(summary = "Create a new training record")
+    @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<TrainingRecord> create(
+            @RequestBody TrainingRecord record,
+            Authentication auth) {
+        record.setCreatedBy(auth != null ? auth.getName() : "system");
+        return ResponseEntity.ok(service.create(record));
+    }
+
+    // ✅ UPDATE
+    @Operation(summary = "Update a training record (ADMIN or MANAGER only)")
     @PutMapping("/{id}")
-    public TrainingRecord update(@PathVariable Long id,
-                                 @RequestBody TrainingRecord updated,
-                                 @RequestParam String role) {
-
-        // 🔥 HOTFIX: role null + validation
-        if (role == null ||
-                (!role.equals("ADMIN") && !role.equals("MANAGER"))) {
-            throw new IllegalArgumentException("Access Denied");
-        }
-
-        if (updated == null) {
-            throw new IllegalArgumentException("Invalid request body");
-        }
-
-        if (updated.getTitle() == null) {
-            throw new IllegalArgumentException("Title required");
-        }
-
-        TrainingRecord record = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Record not found"));
-
-        String oldData = record.toString();
-
-        record.setTitle(updated.getTitle());
-        record.setDescription(updated.getDescription());
-        record.setStatus(updated.getStatus());
-        record.setPriority(updated.getPriority());
-        record.setAssignedTo(updated.getAssignedTo());
-        record.setDueDate(updated.getDueDate());
-        record.setScore(updated.getScore());
-
-        TrainingRecord saved = repository.save(record);
-
-        AuditLog log = new AuditLog();
-        log.setEntityType("TrainingRecord");
-        log.setEntityId(id);
-        log.setAction("UPDATE");
-        log.setChangedBy(role);
-        log.setChangedAt(LocalDateTime.now());
-        log.setOldValue(oldData);
-        log.setNewValue(saved.toString());
-
-        auditRepository.save(log);
-
-        return saved;
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<TrainingRecord> update(
+            @PathVariable Long id,
+            @RequestBody TrainingRecord updated,
+            Authentication auth) {
+        String performedBy = auth != null ? auth.getName() : "system";
+        return ResponseEntity.ok(service.update(id, updated, performedBy));
     }
 
-    // ✅ DELETE (SAFE)
+    // ✅ DELETE (soft delete)
+    @Operation(summary = "Soft-delete a training record (ADMIN only)")
     @DeleteMapping("/{id}")
-    public String delete(@PathVariable Long id,
-                         @RequestParam String role) {
-
-        // 🔥 HOTFIX: role null check
-        if (role == null || !role.equals("ADMIN")) {
-            throw new IllegalArgumentException("Only ADMIN can delete");
-        }
-
-        TrainingRecord record = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Record not found"));
-
-        String oldData = record.toString();
-
-        record.setStatus("DELETED");
-        repository.save(record);
-
-        AuditLog log = new AuditLog();
-        log.setEntityType("TrainingRecord");
-        log.setEntityId(id);
-        log.setAction("DELETE");
-        log.setChangedBy(role);
-        log.setChangedAt(LocalDateTime.now());
-        log.setOldValue(oldData);
-        log.setNewValue("DELETED");
-
-        auditRepository.save(log);
-
-        return "Record deleted successfully";
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, String>> delete(
+            @PathVariable Long id,
+            Authentication auth) {
+        String performedBy = auth != null ? auth.getName() : "system";
+        service.delete(id, performedBy);
+        return ResponseEntity.ok(Map.of("message", "Record deleted successfully"));
     }
 
-    // ✅ SEARCH (SAFE)
+    // ✅ SEARCH
+    @Operation(summary = "Search training records by title or status")
     @GetMapping("/search")
-    public List<TrainingRecord> search(@RequestParam String q) {
-
-        if (q == null || q.trim().isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        return repository.findByTitleContainingIgnoreCase(q);
+    public ResponseEntity<List<TrainingRecord>> search(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(service.search(q, status));
     }
 
     // ✅ STATS
+    @Operation(summary = "Get training statistics")
     @GetMapping("/stats")
-    public Map<String, Long> stats() {
-
-        long total = repository.count();
-        long completed = repository.findByStatus("COMPLETED").size();
-        long pending = repository.findByStatus("PENDING").size();
-
-        Map<String, Long> response = new HashMap<>();
-        response.put("total", total);
-        response.put("completed", completed);
-        response.put("pending", pending);
-
-        return response;
+    public ResponseEntity<Map<String, Long>> stats() {
+        return ResponseEntity.ok(service.getStats());
     }
 
-    // ✅ CSV EXPORT (SAFE)
-    @GetMapping("/export")
-    public String exportCSV() {
+    // ✅ UPDATE STATUS
+    @Operation(summary = "Update the status of a training record")
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<TrainingRecord> updateStatus(
+            @PathVariable Long id,
+            @RequestParam String status,
+            Authentication auth) {
+        String performedBy = auth != null ? auth.getName() : "system";
+        return ResponseEntity.ok(service.updateStatus(id, status, performedBy));
+    }
 
-        List<TrainingRecord> records = repository.findAll();
+    // ✅ GET AUDIT LOGS
+    @Operation(summary = "Get all audit logs (ADMIN only)")
+    @GetMapping("/audit")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<AuditLog>> getAuditLogs() {
+        return ResponseEntity.ok(service.getAuditLogs());
+    }
 
+    // ✅ CSV EXPORT
+    @Operation(summary = "Export all training records as CSV")
+    @GetMapping(value = "/export", produces = "text/plain")
+    public ResponseEntity<byte[]> exportCSV() {
+        List<TrainingRecord> records = service.getAll();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PrintWriter writer = new PrintWriter(out);
-
-        writer.println("ID,Title,Status,Priority,DueDate");
-
-        // 🔥 HOTFIX: null-safe export
+        writer.println("ID,Title,Status,Priority,Score,DueDate,AssignedTo,Category");
         for (TrainingRecord r : records) {
-            writer.println(
-                    r.getId() + "," +
-                            (r.getTitle() != null ? r.getTitle() : "") + "," +
-                            (r.getStatus() != null ? r.getStatus() : "") + "," +
-                            (r.getPriority() != null ? r.getPriority() : "") + "," +
-                            (r.getDueDate() != null ? r.getDueDate() : "")
+            writer.printf("%s,%s,%s,%s,%s,%s,%s,%s%n",
+                    r.getId(),
+                    nvl(r.getTitle()),
+                    nvl(r.getStatus()),
+                    nvl(r.getPriority()),
+                    r.getScore() != null ? r.getScore() : "",
+                    r.getDueDate() != null ? r.getDueDate() : "",
+                    nvl(r.getAssignedTo()),
+                    nvl(r.getCategory())
             );
         }
-
         writer.flush();
-        return out.toString();
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=training_report.csv")
+                .header("Content-Type", "text/csv")
+                .body(out.toByteArray());
+    }
+
+    private String nvl(String s) {
+        return s != null ? s : "";
     }
 }
